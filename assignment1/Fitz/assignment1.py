@@ -250,18 +250,22 @@ class DataPreprocess():
         CO_encoder = CountEncoder(cols = variables)
         return CO_encoder.fit_transform(data_train),CO_encoder.fit_transform(data_test)
     
+    # sampling based on amount as probability
     def UnderSampling(self, dataFrame, timesPos, timesNeg2Pos,seed = 0):
-        num_pos = round(self.num_fraud * timesPos)
+        # make sure every pos case being sampled at once! e.g. samples = allpos + sampledpos
+        num_pos = round(self.num_fraud * (timesPos))
+        num_pos_sampled = round(self.num_fraud * (timesPos-1))
         np.random.seed(seed)
-        samplePos_idx = np.random.choice(self.data_amount["claim_id"], num_pos, replace=True, p = self.data_amount["claim_amount_prob"])
+        samplePos_idx = np.random.choice(self.data_amount["claim_id"], num_pos_sampled, replace=True, p = self.data_amount["claim_amount_prob"])
         dataFrameSampled_pos = dataFrame.loc[samplePos_idx]
+        dataFrame_pos = dataFrame[dataFrame['fraud']==1]
         
         dataFrame_neg = dataFrame[dataFrame['fraud']==0]
         num_neg = round(num_pos*timesNeg2Pos)
         sampleNeg_idx = np.random.choice(dataFrame_neg.index, num_neg, replace=False)
         dataFrameSampled_neg = dataFrame.loc[sampleNeg_idx]
         
-        return pd.concat([dataFrameSampled_pos,dataFrameSampled_neg])
+        return pd.concat([dataFrameSampled_pos,dataFrame_pos,dataFrameSampled_neg])
     
     def FillNan(self, dataFrame, method = 'median'):
         dfcopy = dataFrame.copy()
@@ -311,8 +315,8 @@ class MyModel():
         return pd.DataFrame({"ID":test.index,"PROB":predication})
 
     def HistGB(self, train, train_label, test, test_label = None, ROC = True):
-        from sklearn.ensemble import HistGradientBoostingClassifier
-        
+        from sklearn.experimental import enable_hist_gradient_boosting
+        from sklearn.ensemble import HistGradientBoostingClassifier        
         clf = HistGradientBoostingClassifier().fit(train, train_label)
         predication = clf.predict_proba(test)[:,1]
         if test_label is not None:
@@ -336,7 +340,7 @@ if __name__ == '__main__':
     data_train,data_test = data.CountEncode(data_train, data_test, countList)
     
     # to solve unbalance of training set, under-sample data
-    data_sampled = data.UnderSampling(data_train,3,5,seed=2) # randomness is controled by seed
+    data_sampled = data.UnderSampling(data_train,4,5,seed=0) # randomness is controled by seed
     
     # split sampled training set to sub-train and sub-test for parameter tuning
     len_sampled = len(data_sampled)
