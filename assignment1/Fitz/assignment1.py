@@ -11,8 +11,6 @@ from category_encoders.target_encoder import TargetEncoder
 from category_encoders.one_hot import OneHotEncoder
 from category_encoders.count import CountEncoder
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.datasets import make_classification
 from sklearn import metrics
 
 import matplotlib.pyplot as plt
@@ -277,36 +275,48 @@ class MyModel():
     def __init__(self):
         pass
     
+    def CalResult(self,test_label,predication,ROC = True):
+        fpr, tpr, thresholds = metrics.roc_curve(test_label, predication, pos_label=1)
+        roc_auc = metrics.auc(fpr, tpr)
+        # Youden's J statistic to obtain the optimal probability threshold
+        best_threshold = sorted(list(zip(np.abs(tpr - fpr), predication)), key=lambda i: i[0], reverse=True)[0][1]
+        print("threshold is {}".format(best_threshold))
+        y_pred = [1 if i >= best_threshold else 0 for i in predication]
+        confuMatrix = metrics.confusion_matrix(test_label, y_pred)
+        confuMatrix = pd.DataFrame(confuMatrix, columns=['pred_0','pred_1'])
+        print('Confusion Matrix(selected optimal threshold):')
+        print(confuMatrix)
+        plt.figure()
+        if ROC == True:
+            lw = 2
+            plt.plot(fpr, tpr, color='darkorange',
+                     lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title('Receiver operating characteristic example')
+            plt.legend(loc="lower right")
+            plt.show()       
+    
     def RandomForest(self, train, train_label, test, test_label = None, ROC = True):
-        clf = RandomForestClassifier(max_depth=5, criterion='gini', random_state = 20)
-        
+        from sklearn.ensemble import RandomForestClassifier    
+        clf = RandomForestClassifier(max_depth=5, criterion='gini', random_state = 20)       
         clf.fit(train, train_label)        
         predication = clf.predict_proba(test)[:,1]
-        
         if test_label is not None:
-            fpr, tpr, thresholds = metrics.roc_curve(test_label, predication, pos_label=1)
-            roc_auc = metrics.auc(fpr, tpr)
-            # Youden's J statistic to obtain the optimal probability threshold
-            best_threshold = sorted(list(zip(np.abs(tpr - fpr), predication)), key=lambda i: i[0], reverse=True)[0][1]
-            print("threshold is {}".format(best_threshold))
-            y_pred = [1 if i >= best_threshold else 0 for i in predication]
-            confuMatrix = metrics.confusion_matrix(test_label, y_pred)
-            confuMatrix = pd.DataFrame(confuMatrix, columns=['pred_0','pred_1'])
-            print('Confusion Matrix(selected optimal threshold):')
-            print(confuMatrix)
-            plt.figure()
-            if ROC == True:
-                lw = 2
-                plt.plot(fpr, tpr, color='darkorange',
-                         lw=lw, label='ROC curve (area = %0.2f)' % roc_auc)
-                plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
-                plt.xlim([0.0, 1.0])
-                plt.ylim([0.0, 1.05])
-                plt.xlabel('False Positive Rate')
-                plt.ylabel('True Positive Rate')
-                plt.title('Receiver operating characteristic example')
-                plt.legend(loc="lower right")
-                plt.show()
+            self.CalResult(test_label,predication,ROC)
+            
+        return pd.DataFrame({"ID":test.index,"PROB":predication})
+
+    def HistGB(self, train, train_label, test, test_label = None, ROC = True):
+        from sklearn.ensemble import HistGradientBoostingClassifier
+        
+        clf = HistGradientBoostingClassifier().fit(train, train_label)
+        predication = clf.predict_proba(test)[:,1]
+        if test_label is not None:
+            self.CalResult(test_label,predication,ROC)
         return pd.DataFrame({"ID":test.index,"PROB":predication})
 
 if __name__ == '__main__':
@@ -326,7 +336,7 @@ if __name__ == '__main__':
     data_train,data_test = data.CountEncode(data_train, data_test, countList)
     
     # to solve unbalance of training set, under-sample data
-    data_sampled = data.UnderSampling(data_train,3,5,seed=0) # randomness is controled by seed
+    data_sampled = data.UnderSampling(data_train,3,5,seed=2) # randomness is controled by seed
     
     # split sampled training set to sub-train and sub-test for parameter tuning
     len_sampled = len(data_sampled)
@@ -336,21 +346,28 @@ if __name__ == '__main__':
     subtest_idx = np.delete(np.arange(len_sampled),subtrain_idx)
     data_subtrain = data_sampled.iloc[subtrain_idx]
     data_subtest = data_sampled.iloc[subtest_idx]
-    
-    data_subtrain = data.FillNan(data_subtrain)
-    data_subtest = data.FillNan(data_subtest)
-    
+   
     ################################
     ## PART2: model build
     ################################
     mymodel = MyModel()
+    # specify model
+    modelName = 'histGB'
     
-    # validation
-    mymodel.RandomForest(data_subtrain.iloc[:,1:],data_subtrain['fraud'],data_subtest.iloc[:,1:],data_subtest['fraud'])
-    
-    # # apply model to whole training set
-    data_sampled = data.FillNan(data_sampled)
-    data_test = data.FillNan(data_test)
-    final_pred = mymodel.RandomForest(data_sampled.iloc[:,1:],data_sampled['fraud'], data_test)
-    final_pred.to_csv("output.csv",index=False)
+    if modelName == 'randomforest':
+        data_subtrain = data.FillNan(data_subtrain)
+        data_subtest = data.FillNan(data_subtest)
+        # validation
+        mymodel.RandomForest(data_subtrain.iloc[:,1:],data_subtrain['fraud'],data_subtest.iloc[:,1:],data_subtest['fraud'])    
+        # # apply model to whole training set
+        data_sampled = data.FillNan(data_sampled)
+        data_test = data.FillNan(data_test)
+        final_pred = mymodel.RandomForest(data_sampled.iloc[:,1:],data_sampled['fraud'], data_test)
+        final_pred.to_csv(modelName+"output.csv",index=False)
+    elif modelName == 'histGB':
+        # validation
+        mymodel.HistGB(data_subtrain.iloc[:,1:],data_subtrain['fraud'],data_subtest.iloc[:,1:],data_subtest['fraud'])    
+        # # apply model to whole training set
+        final_pred = mymodel.HistGB(data_sampled.iloc[:,1:],data_sampled['fraud'], data_test)
+        final_pred.to_csv(modelName+"output.csv",index=False)
     
