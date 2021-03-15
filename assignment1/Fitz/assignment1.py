@@ -16,9 +16,9 @@ from sklearn import metrics
 import matplotlib.pyplot as plt
 
 class DataPreprocess():
-    def __init__(self):
-        self.data_train = pd.read_csv("train.csv",sep=";")
-        self.data_test = pd.read_csv("test.csv",sep=";")
+    def __init__(self,data_train, data_test):
+        self.data_train = data_train
+        self.data_test = data_test
         self.num_fraud = np.sum(self.data_train["fraud"]=="Y")
         self.num_Notfraud = np.sum(self.data_train["fraud"]=="N")
         variable_train = set(self.data_train.columns)
@@ -43,6 +43,8 @@ class DataPreprocess():
         #     self.data_amount["claim_amount"].std()
         # self.data_amount["claim_amount"] = self.data_amount["claim_amount"].apply(lambda x: 1 / (1 + np.exp(-x)))
         
+        # add log amount
+        self.data_amount["log_amount"] = self.data_amount['claim_amount'].apply(np.log)
         # simply use amount as weight
         self.data_amount["claim_amount_prob"] = self.data_amount["claim_amount"]/self.data_amount["claim_amount"].sum()
     
@@ -80,7 +82,8 @@ class DataPreprocess():
     # transfer target value to 0 and 1
     def TransferTarget(self):
         self.data_train['fraud'] = self.data_train.fraud.map(dict(N=int(0), Y=int(1)))
-    
+        
+        
     def DateProcess(self):
         def DateDiffDays(Date1,Date2):
             Date1 = Date1.apply(str)
@@ -250,8 +253,18 @@ class DataPreprocess():
         CO_encoder = CountEncoder(cols = variables)
         return CO_encoder.fit_transform(data_train),CO_encoder.fit_transform(data_test)
     
+    def applyEncoder(self):
+        # encoding strategy right now
+        targetEncoderList = ['claim_postal_code','policy_holder_postal_code','driver_postal_code','policy_coverage_type']
+        self.data_train, self.data_test = self.TargetEncode(self.data_train, self.data_test, targetEncoderList)
+        oneHotList = ['claim_cause','claim_vehicle_type','claim_language']
+        self.data_train,self.data_test = data.OneHotEncode(self.data_train, self.data_test, oneHotList)
+        countList = ['claim_vehicle_brand']
+        self.data_train,self.data_test = data.CountEncode(self.data_train, self.data_test, countList)
+    
+    
     # sampling based on amount as probability
-    def UnderSampling(self, dataFrame, timesPos, timesNeg2Pos,seed = 0):
+    def UnderSampling(self, dataFrame, timesPos, timesNeg2Pos, seed = 0):
         # make sure every pos case being sampled at once! e.g. samples = allpos + sampledpos
         num_pos = round(self.num_fraud * (timesPos))
         num_pos_sampled = round(self.num_fraud * (timesPos-1))
@@ -262,10 +275,20 @@ class DataPreprocess():
         
         dataFrame_neg = dataFrame[dataFrame['fraud']==0]
         num_neg = round(num_pos*timesNeg2Pos)
+        np.random.seed(seed)
         sampleNeg_idx = np.random.choice(dataFrame_neg.index, num_neg, replace=False)
         dataFrameSampled_neg = dataFrame.loc[sampleNeg_idx]
         
         return pd.concat([dataFrameSampled_pos,dataFrame_pos,dataFrameSampled_neg])
+    
+    def OverSampling(self, dataFrame, timesPos2Neg, seed = 0):
+        dataFrame_neg = dataFrame[dataFrame['fraud']==0]
+        num_pos_sampled = round(timesPos2Neg*len(dataFrame_neg))
+        np.random.seed(seed)
+        samplePos_idx = np.random.choice(self.data_amount["claim_id"], num_pos_sampled, replace=True, p = self.data_amount["claim_amount_prob"])
+        dataFrameSampled_pos = dataFrame.loc[samplePos_idx]
+        
+        return pd.concat([dataFrameSampled_pos,dataFrame_neg])
     
     def FillNan(self, dataFrame, method = 'median'):
         dfcopy = dataFrame.copy()
@@ -283,7 +306,8 @@ class MyModel():
         fpr, tpr, thresholds = metrics.roc_curve(test_label, predication, pos_label=1)
         roc_auc = metrics.auc(fpr, tpr)
         # Youden's J statistic to obtain the optimal probability threshold
-        best_threshold = sorted(list(zip(np.abs(tpr - fpr), predication)), key=lambda i: i[0], reverse=True)[0][1]
+        # best_threshold = sorted(list(zip(np.abs(tpr - fpr), predication)), key=lambda i: i[0], reverse=True)[0][1]
+        best_threshold = 0.5
         print("threshold is {}".format(best_threshold))
         y_pred = [1 if i >= best_threshold else 0 for i in predication]
         confuMatrix = metrics.confusion_matrix(test_label, y_pred)
@@ -306,14 +330,15 @@ class MyModel():
     
     def RandomForest(self, train, train_label, test, test_label = None, ROC = True):
         from sklearn.ensemble import RandomForestClassifier    
-        clf = RandomForestClassifier(max_depth=5, criterion='gini', random_state = 20)       
-        clf.fit(train, train_label)        
+        clf = RandomForestClassifier(max_depth=5, criterion='gini')       
+        clf.fit(train, train_label)    
         predication = clf.predict_proba(test)[:,1]
         if test_label is not None:
             self.CalResult(test_label,predication,ROC)
-            
-        return pd.DataFrame({"ID":test.index,"PROB":predication})
-
+            return pd.DataFrame({"ID":test.index,"PROB":predication,"label":test_label})
+        else:
+            return pd.DataFrame({"ID":test.index,"PROB":predication})
+        
     def HistGB(self, train, train_label, test, test_label = None, ROC = True):
         from sklearn.experimental import enable_hist_gradient_boosting
         from sklearn.ensemble import HistGradientBoostingClassifier        
@@ -321,57 +346,87 @@ class MyModel():
         predication = clf.predict_proba(test)[:,1]
         if test_label is not None:
             self.CalResult(test_label,predication,ROC)
-        return pd.DataFrame({"ID":test.index,"PROB":predication})
+            return pd.DataFrame({"ID":test.index,"PROB":predication,"label":test_label})
+        else:
+            return pd.DataFrame({"ID":test.index,"PROB":predication})
 
-if __name__ == '__main__':
-    ################################
-    ## PART1: data exctraction and processing
-    ################################
-    data = DataPreprocess()
-    data.applyPreprocess()
-    data_train = data.data_train
-    data_test = data.data_test
-    # encoding strategy right now
-    targetEncoderList = ['claim_postal_code','policy_holder_postal_code','driver_postal_code','policy_coverage_type']
-    data_train, data_test = data.TargetEncode(data_train, data_test, targetEncoderList)
-    oneHotList = ['claim_cause','claim_vehicle_type','claim_language']
-    data_train,data_test = data.OneHotEncode(data_train, data_test, oneHotList)
-    countList = ['claim_vehicle_brand']
-    data_train,data_test = data.CountEncode(data_train, data_test, countList)
-    
-    # to solve unbalance of training set, under-sample data
-    data_sampled = data.UnderSampling(data_train,4,5,seed=0) # randomness is controled by seed
-    
-    # split sampled training set to sub-train and sub-test for parameter tuning
-    len_sampled = len(data_sampled)
-    num_subtrain = round(0.8*len_sampled)
-    num_subtest = len_sampled - num_subtrain
-    subtrain_idx = np.random.choice(len_sampled,num_subtrain, replace=False)
-    subtest_idx = np.delete(np.arange(len_sampled),subtrain_idx)
-    data_subtrain = data_sampled.iloc[subtrain_idx]
-    data_subtest = data_sampled.iloc[subtest_idx]
-   
-    ################################
-    ## PART2: model build
-    ################################
+def DataSplit(dataFrame,test_size = 0.33, seed = 0):
+    from sklearn.model_selection import train_test_split
+    data_train, data_test = train_test_split(dataFrame, test_size = test_size, random_state=seed,
+                                             stratify = dataFrame['fraud'])
+    test_label = data_test.loc[:,("claim_id","fraud","claim_amount")]
+    test_label['claim_amount'] = test_label["claim_amount"].apply(lambda x: float(x.split(',')[0]) + \
+                                                                                  float(x.split(',')[1])/100)
+    test_label['fraud'] = test_label.fraud.map(dict(N=int(0), Y=int(1)))
+    return data_train.copy(), data_test.drop(columns=['fraud','claim_amount']),test_label
+
+def ModelApply(data_train, data_test, data_testLabel, model, validation):
     mymodel = MyModel()
-    # specify model
-    modelName = 'histGB'
+    if validation == True and data_testLabel is not None:              
+        if model == 'randomforest':           
+            # validation
+            prediction = mymodel.RandomForest(data_train.iloc[:,1:],data_train['fraud'],data_test,data_testLabel['fraud'])
+            
+        elif model == 'histGB':
+            # validation
+            prediction = mymodel.HistGB(data_train.iloc[:,1:],data_train['fraud'],data_test,data_testLabel['fraud'])    
+            # # apply model to whole training set             
+        else:
+            print('PLEASE SPECIFY A VALID MODEL!!')
+            
+        return prediction
+    if validation == False:
+        if model == 'randomforest':  
+            # apply model to whole training set
+            final_pred = mymodel.RandomForest(data_train.iloc[:,1:],data_train['fraud'], data_test)
+            final_pred.to_csv(model+"output.csv",index=False)
+        elif model == 'histGB':
+            final_pred = mymodel.HistGB(data_train.iloc[:,1:],data_train['fraud'], data_test)   
+            final_pred.to_csv(model+"output.csv",index=False)
+        else:
+            print('PLEASE SPECIFY A VALID MODEL!!')
+            
+if __name__ == '__main__':    
+    data_train_full = pd.read_csv("train.csv",sep=";")
+    data_test_full = pd.read_csv("test.csv",sep=";")
     
-    if modelName == 'randomforest':
-        data_subtrain = data.FillNan(data_subtrain)
-        data_subtest = data.FillNan(data_subtest)
-        # validation
-        mymodel.RandomForest(data_subtrain.iloc[:,1:],data_subtrain['fraud'],data_subtest.iloc[:,1:],data_subtest['fraud'])    
-        # # apply model to whole training set
-        data_sampled = data.FillNan(data_sampled)
-        data_test = data.FillNan(data_test)
-        final_pred = mymodel.RandomForest(data_sampled.iloc[:,1:],data_sampled['fraud'], data_test)
-        final_pred.to_csv(modelName+"output.csv",index=False)
-    elif modelName == 'histGB':
-        # validation
-        mymodel.HistGB(data_subtrain.iloc[:,1:],data_subtrain['fraud'],data_subtest.iloc[:,1:],data_subtest['fraud'])    
-        # # apply model to whole training set
-        final_pred = mymodel.HistGB(data_sampled.iloc[:,1:],data_sampled['fraud'], data_test)
-        final_pred.to_csv(modelName+"output.csv",index=False)
+    ################################
+    ## PART1: Validation
+    ################################
+    data_subTrain, data_subTest, data_subTestLabel = DataSplit(data_train_full, seed = 20)
+    data = DataPreprocess(data_subTrain, data_subTest)
+    data.applyPreprocess()
+    data.applyEncoder()
+    data_subTrain = data.data_train
+    data_subTest = data.data_test
+    # # to solve unbalance of training set, under-sample data
+    # data_subTrainsampled = data.UnderSampling(data_subTrain,4,5,seed=0) # randomness is controled by seed
+    # alternatively over-sample
+    data_subTrainsampled = data.UnderSampling(data_subTrain,5,4,seed=10) # randomness is controled by seed
+    # fill missing value
+    # data_subTrainsampled = data.FillNan(data_subTrainsampled)
+    # data_subTest = data.FillNan(data_subTest)
     
+    pred = ModelApply(data_subTrainsampled,data_subTest,data_subTestLabel,'histGB',validation = True)
+    
+    # compute top 100 sum of amount, divided by total fraud amount
+    predTop100 = pred.sort_values(by=['PROB'],ascending=False)[0:100]
+    predTop100 = predTop100.merge(data_subTestLabel,how='inner',left_on='ID', right_on='claim_id')
+    predAmount = sum(predTop100['claim_amount'][predTop100['label']==1])/sum(data_subTestLabel['claim_amount'][data_subTestLabel['fraud']==1])
+    print("TOP100 amount percentage is: {0:.3f}".format(predAmount))
+    
+    # ################################
+    # ## PART2: Apply to whole training set
+    # ################################
+    # data = DataPreprocess(data_train_full, data_test_full)
+    # data.applyPreprocess()
+    # data.applyEncoder()
+    # data_Train = data.data_train
+    # data_Test = data.data_test
+    # # to solve unbalance of training set, under-sample data
+    # data_Trainsampled = data.UnderSampling(data_Train,5,4,seed=10) # randomness is controled by seed
+    # # fill missing value
+    # data_Trainsampled = data.FillNan(data_Trainsampled)
+    # data_Test = data.FillNan(data_Test)   
+    # # validation
+    # ModelApply(data_Trainsampled, data_Test, data_testLabel = None, model = 'randomforest',validation = False)
