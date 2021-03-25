@@ -1,0 +1,57 @@
+{
+    "lightGBM": {
+        "train_auc": [
+            0.9763283231979971
+        ],
+        "total_train_score": [
+            859410.0399999999
+        ],
+        "total_train_ratio": [
+            0.7556
+        ]
+    },
+    "NeuralNetworks": {
+        "train_auc": [
+            0.9043929064734447
+        ],
+        "total_train_score": [
+            708980.1000000001
+        ],
+        "total_train_ratio": [
+            0.7671
+        ]
+    },
+    "FANS": {
+        "train_auc": [
+            0
+        ],
+        "total_train_score": [
+            0
+        ],
+        "total_train_ratio": [
+            0
+        ]
+    },
+    "OneClassSVM": {
+        "train_auc": [
+            0.7160431900477953
+        ],
+        "total_train_score": [
+            604160.5800000001
+        ],
+        "total_train_ratio": [
+            0.0744
+        ]
+    },
+    "IsolationForest": {
+        "train_auc": [
+            0.734144866628458
+        ],
+        "total_train_score": [
+            729992.7400000001
+        ],
+        "total_train_ratio": [
+            0.0
+        ]
+    }
+}
