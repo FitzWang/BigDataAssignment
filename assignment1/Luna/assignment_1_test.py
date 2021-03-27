@@ -12,9 +12,9 @@ import datetime
 from datetime import timedelta
 import math
 from sklearn import preprocessing
-min_max_scaler = preprocessing.MinMaxScaler()
-ohe_period = preprocessing.OneHotEncoder(handle_unknown='ignore')
-### may have some problems (you could Google to figure it out)
+min_max_scaler = preprocessing.MinMaxScaler()  #transform features by scalling each feature to a given range
+ohe_period = preprocessing.OneHotEncoder(handle_unknown='ignore') #Encode categorical features as a one-hot numeric array.  ignore if an unknown categorical feature is present during transform 
+
 import category_encoders as ce
 import lightgbm as lgb
 import pickle  
@@ -38,8 +38,16 @@ from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
 from sklearn import decomposition
 
+
+# PyTorch sampler ImbalancedDatasetSample: 
+# - rebalance the class distributions when sampling from the imbalanced dataset 
+# - estimate the sampling weights automatically 
+# - avoid creating a new balanced dataset 
+# - mitigate overfitting when it is used in conjunction with data augmentation techniques.
+## Reference: https://github.com/ufoym/imbalanced-dataset-sampler
 class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
-    """Samples elements randomly from a given list of indices for imbalanced dataset
+    """
+    Samples elements randomly from a given list of indices for imbalanced dataset
     Arguments:
         indices (list, optional): a list of indices
         num_samples (int, optional): number of samples to draw
@@ -94,8 +102,6 @@ class ImbalancedDatasetSampler(torch.utils.data.sampler.Sampler):
     def __len__(self):
         return self.num_samples
 
-
-
 class LocalOneHotEncoder(object):
     
   def __init__(self, target_columns):
@@ -144,25 +150,37 @@ def GetIntervalMonths(feature1,feature2_str,df,method):
     #         if type(feature2[i]) != float  
     #         else feature2[i] for i in range(df.shape[0])]
 
-    feature2 = [[int(str(i).split('.')[0][:4]),int(str(i).split('.')[0][4:6])] if not math.isnan(i)
-        else i  for i in df[feature2_str]]
+    feature2 = [
+        [
+            int(str(i).split('.')[0][:4]), 
+            int(str(i).split('.')[0][4:6])
+        ] if not math.isnan(i) 
+        else i 
+        for i in df[feature2_str]
+    ]
     if method == 'past':
-        Interval = [(feature1[i].year-feature2[i][0])*12 + (feature1[i].month-feature2[i][1])
-        if type(feature2[i]) != float  
-        else feature2[i] for i in range(df.shape[0])]
+        Interval = [
+            (feature1[i].year-feature2[i][0])*12 + (feature1[i].month-feature2[i][1]) 
+            if type(feature2[i]) != float  #🚩why would feature2[i] be a float?
+            else feature2[i] 
+            for i in range(df.shape[0])
+        ]
     elif method == 'future':
-        Interval = [(feature2[i][0]-feature1[i].year)*12 + (feature2[i][1]-feature1[i].month)
-        if type(feature2[i]) != float  
-        else feature2[i] for i in range(df.shape[0])]
-
+        Interval = [
+            (feature2[i][0]-feature1[i].year)*12 + (feature2[i][1]-feature1[i].month)
+            if type(feature2[i]) != float  
+            else feature2[i] 
+            for i in range(df.shape[0])
+        ]
     return Interval
     
 def Turn2Binary(df,dimension_name,category1):
     return [1 if i ==category1 else 0 for i in (df[dimension_name]) ]
-def Turn2Datetime(df,dimension_name):
-    return [parse(str(i)) if not math.isnan(i) else i for i in df[dimension_name]]
 
-def PortionHighCategoricalVariable(train_data,test_data,labels):
+def Turn2Datetime(df,dimension_name):
+    return [parse(str(i)) if not math.isnan(i) else i for i in df[dimension_name]] #turn a string to a date/time stamp
+
+def PortionHighCategoricalVariable(train_data,test_data,labels): #not used in the script
     categories_columns = []
     for col in train_data.columns:
         if  '_id' in col:
@@ -257,20 +275,25 @@ def OneHotPreprocess(df_transform):
 
     return df_transform
 
-
-def Preprocess(df_transform,the_year):
+## The following function is mainly used to transform the time stamp into time interval and return the processed dataframe.
+def Preprocess(df_transform,the_year): 
     ### turn to date
     claim_date_registered = Turn2Datetime(df_transform,'claim_date_registered')
     claim_date_occured = Turn2Datetime(df_transform,'claim_date_occured')
     ### turn to claim_date_interval
     claim_date_interval = [(claim_date_registered[i]-claim_date_occured[i]).days for i in range(df_transform.shape[0])]
-    df_transform ['claim_date_interval'] =  claim_date_interval
+    df_transform['claim_date_interval'] =  claim_date_interval
     ### turn to interval by past date
     for time_interval in ['claim_vehicle_date_inuse','policy_date_start']:
         df_transform[time_interval] = GetIntervalMonths(claim_date_occured,time_interval,df_transform,'past')
+    #the above for loop replace original claim_vehicle_date_inuse by the time interval between the claim occured date and inuse date
+    #same for the policy_data_start
+    
     ### turn to interval by future date
+    # 'policy_date_next_expiry' and 'policy_date_last_renewed' are time for the future.
     for time_interval in ['policy_date_next_expiry','policy_date_last_renewed']:
         df_transform[time_interval] = GetIntervalMonths(claim_date_occured,time_interval,df_transform,'future')
+    
     ### to get year and month for categorization
     df_transform ['claim_date_occured_year'] =  [i.year for i in claim_date_occured]
     df_transform ['claim_date_occured_month'] =  [i.month for i in claim_date_occured]
@@ -288,15 +311,20 @@ def Preprocess(df_transform,the_year):
         elif len(sub_item) == 3:
             claim_date_occured_hour.append(int(sub_item[0:1]))
         elif sub_item[0:1] == '24':
-            claim_time_occured[i] == 0
+            claim_time_occured[i] == 0  # 🚩 why not append to claim_data_occured_hour?
         elif len(sub_item) == 4:
             claim_date_occured_hour.append(int(sub_item[0:2]))
     df_transform['claim_hour_occured'] = claim_date_occured_hour
     ### drop the processed columns
     df_transform.drop(["claim_date_registered", "claim_date_occured",'claim_time_occured'], axis=1,inplace=True)
+    # - "claim_date_registered" has been transformed into "claim_time interval" 
+    # - "claim_date_occured" has been transformed to year and month
+    # - 'claim_time_occured' has been transformed to "claim_hour_occured"
+
     ### get their age
     for col in ['policy_holder_year_birth','driver_year_birth','third_party_1_year_birth','third_party_2_year_birth','repair_year_birth']:
         df_transform[col] = [the_year-i if not math.isnan(i) else i for i in df_transform[col]]
+    
     ### Turn2Binary
     # ,'driver_injured','repair_sla'
     for col in ['claim_police','claim_liable']:
@@ -828,26 +856,31 @@ def LightGBM(train_data,test_data,val_data,df_train,label_train,label_test,label
 def GetSplitDataframe(df,portion):
     df_positive = df[df['class'] == 1]
     df_negative = df[df['class'] == 0]
-    df_test = df_positive.sample(frac=portion).append(df_negative.sample(frac=portion))
-    df_train = df.drop(list(df_test.index))
+    df_test = df_positive.sample(frac=portion).append(df_negative.sample(frac=portion)) # random selection of 30%of postive +30% of negative
+    df_train = df.drop(list(df_test.index)) #data excluding the test data
 
     return df_train,df_test
 
 def ClearID(train_data,val_data,test_data):
     del_cols = []
     for col in train_data.columns:
-        if  '_id' not in col:
-            continue
-        temp_list = list((set([i for i in list(train_data[col]) if type(i) == str])))
-        temp_list_2 = list([i for i in list(test_data[col]) if type(i) == str])
-        if len(temp_list_2) == 0:
+        if  '_id' not in col: 
+            continue #skip the columns that does not have "_id"
+        #take all the column names which does contain _id
+        temp_list = list((set([i for i in list(train_data[col]) if type(i) == str])))  #i is the value in each column, it is making sure the value is string (skipping the empty cells)
+        temp_list_2 = list([i for i in list(test_data[col]) if type(i) == str]) #🚩 why not adding set() in this line?
+        if len(temp_list_2) == 0: #if there are all empty cells in the column, then the column will be marked to remove.
             del_cols.append(col)
-        elif len([i for i in temp_list_2 if i in temp_list])/len(temp_list_2) > 0.2:
+        elif len([i for i in temp_list_2 if i in temp_list])/len(temp_list_2) > 0.2: 
+        #the number of id name in test set matches with the id name in training set / the number of id name in test set >0.2
+        # if there are more than 20% of datapoints in the test set that can be matched with training data, then drop the column, 🚩why?
             del_cols.append(col)
+    
     for sub_df in [train_data,val_data,test_data]:
-        sub_df = sub_df.drop(del_cols, 1) 
+        sub_df = sub_df.drop(del_cols, 1) #🚩 I don't get why to drop those cols?
+        #sub_de.drop(del_cols,1,inplace=True) could also work 
 
-    return  train_data,val_data,test_data
+    return  train_data,val_data,test_data  #return the dataset that has deleted certain "_id" columns
     
 def NewPreProcess(df):
     unimportant_features = ['claim_alcohol','claim_vehicle_type','claim_vehicle_fuel_type','policy_holder_country',
@@ -883,6 +916,7 @@ def NewPreProcess(df):
 
 if __name__ == '__main__':
     
+    # 0. Load data and data preprocessing
     ### read data
     input_train_path = './train.csv'
     input_test_path = './test.csv'
@@ -891,10 +925,10 @@ if __name__ == '__main__':
     out_train_path_1 = './encoded_train_with_val.csv'
     out_train_path_2 = './encoded_test.csv'
     df = pd.read_csv(input_train_path,sep = ';',index_col='claim_id')
-    # 45622 is deleted due to data quality of claim_vehicle_load (500)
+    # 45622 is deleted due to data quality of claim_vehicle_load (500) 🚩how did you detect it ?
     df = df.drop([45622], 0)
     df['class'] = [1 if i == 'Y' else 0 for i in df['fraud']]
-    df = NewPreProcess(df)
+    df = NewPreProcess(df) # 🚩 why does this function mean?
     
     # if "claim_amount" in df.columns:
     #     df["claim_amount"] = [float(str.replace(amount, ",", ".")) for amount in df["claim_amount"]]
@@ -907,36 +941,39 @@ if __name__ == '__main__':
     expand_train_pos_num = 2
     df = df.reset_index()
     ### Get Split Dataframe
-    df_train,df_test = GetSplitDataframe(df,test_data_portion)
-    df_train,df_val = GetSplitDataframe(df_train,val_data_portion)
-    df_train_pos = df_train[df_train['class'] == 1]
-    ### to expand the positive samples
+    df_train,df_test = GetSplitDataframe(df,test_data_portion) #create test (30% positive+ 30% negative) and first_training set (70% postive+70% negative)
+    df_train,df_val = GetSplitDataframe(df_train,val_data_portion) # create validation set (0.7*0.05=3.5% postive +3.5% negative) and real training set (66.5% postive and 66.5% negative)
+    # - Training data: 66.5% of positive +66.5% of negative;
+    # - Test data: 30% of postive +30% of negative
+    # - Validation data: 3.5% of postive +3.5% of negative
+    df_train_pos = df_train[df_train['class'] == 1] # extract the postive case in training data
+    # oversampling: to expand the positive samples
     for i in range(expand_train_pos_num):
-        df_train = df_train.append(df_train_pos)
+        df_train = df_train.append(df_train_pos) # adding the postive case from the training set twice to the training set and generate an oversampling training set
     df_train = df_train.reset_index(drop = True)
-    ### get train , validation (prevent overfitting) and test datasets
-    label_train = df_train['class']
+    # get train , validation (prevent overfitting) and test datasets
+    label_train = df_train['class'] 
     W_train = df_train['claim_amount']
-    W_train = [float(i.replace(',','.')) for i in W_train]
-    train_data = df_train.drop(["class", "fraud",'claim_amount'], 1)
-    df_test = df_test.reset_index(drop = True)
-    label_test = list(df_test['class'])
+    W_train = [float(i.replace(',','.')) for i in W_train] #transform xxx,xx to xxx.xx
+    train_data = df_train.drop(["class", "fraud",'claim_amount'], 1) # or df_train.drop(columns=["class", "fraud",'claim_amount'])
+    df_test = df_test.reset_index(drop = True) #drop=True means drop the original index
+    label_test = list(df_test['class']) 
     test_data = df_test.drop(["class", "fraud",'claim_amount'], 1)
-    label_val = df_val['class']
-    W_val = df_val['claim_amount']
+    label_val = df_val['class'] 
+    W_val = df_val['claim_amount'] 
     W_val = [float(i.replace(',','.')) for i in W_val]
     val_data = df_val.drop(["class", "fraud",'claim_amount'], 1)
 
     ### standardized prepoess (drop unimportant features; cope with date kind features)
     # .drop('claim_id',axis=1)
-    train_data = Preprocess(train_data,2017)
+    train_data = Preprocess(train_data,2017) #2017 is the claim registration year
     test_data = Preprocess(test_data,2017)
     val_data = Preprocess(val_data,2017)
 
     train_data,val_data,test_data = ClearID(train_data,val_data,test_data)
 
 
-    ### 1.LightGBM (no need for categorization and cope with NaN value)
+    # 1.LightGBM (no need for categorization and cope with NaN value)
     final_pred_LightGBM = LightGBM(train_data,test_data,val_data,df_train,label_train,label_test,label_val,'unfilled','portion','train',W_train,W_val)
     
     ### predict true test dataset
