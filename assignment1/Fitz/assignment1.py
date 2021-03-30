@@ -203,7 +203,15 @@ class DataPreprocess():
         # fill nan in vehicle brand with others
         self.data_train["claim_vehicle_brand"] = self.data_train["claim_vehicle_brand"].fillna("others")
         self.data_test["claim_vehicle_brand"] = self.data_test["claim_vehicle_brand"].fillna("others")
-    
+        
+        # Split policy_coverage_type
+        length = len(self.data_train["policy_coverage_type"].iloc[0])
+        for i in range(1,length):
+            self.data_train["policy_coverage_type_"+str(i)] = self.data_train["policy_coverage_type"].apply(lambda x: int(x[i]))
+            self.data_test["policy_coverage_type_"+str(i)] = self.data_test["policy_coverage_type"].apply(lambda x: int(x[i]))
+        self.data_train =  self.data_train.drop(columns = "policy_coverage_type")
+        self.data_test =  self.data_test.drop(columns = "policy_coverage_type")
+        
     def BinaryEncode(self):
         YNList = ['claim_liable', 'claim_police', 'driver_injured', 'repair_sla']
         FMList = ['policy_holder_form','driver_form']
@@ -255,7 +263,7 @@ class DataPreprocess():
     
     def applyEncoder(self):
         # encoding strategy right now
-        targetEncoderList = ['claim_postal_code','policy_holder_postal_code','driver_postal_code','policy_coverage_type']
+        targetEncoderList = ['claim_postal_code','policy_holder_postal_code','driver_postal_code']
         self.data_train, self.data_test = self.TargetEncode(self.data_train, self.data_test, targetEncoderList)
         oneHotList = ['claim_cause','claim_vehicle_type','claim_language']
         self.data_train,self.data_test = data.OneHotEncode(self.data_train, self.data_test, oneHotList)
@@ -393,7 +401,7 @@ if __name__ == '__main__':
     ################################
     ## PART1: Validation
     ################################
-    data_subTrain, data_subTest, data_subTestLabel = DataSplit(data_train_full, seed = 20)
+    data_subTrain, data_subTest, data_subTestLabel = DataSplit(data_train_full, seed = 24)
     data = DataPreprocess(data_subTrain, data_subTest)
     data.applyPreprocess()
     data.applyEncoder()
@@ -402,13 +410,13 @@ if __name__ == '__main__':
     # # to solve unbalance of training set, under-sample data
     # data_subTrainsampled = data.UnderSampling(data_subTrain,4,5,seed=0) # randomness is controled by seed
     # alternatively over-sample
-    data_subTrainsampled = data.UnderSampling(data_subTrain,5,4,seed=10) # randomness is controled by seed
+    data_subTrainsampled = data.UnderSampling(data_subTrain,5,4,seed=19) # randomness is controled by seed
     # fill missing value
     # data_subTrainsampled = data.FillNan(data_subTrainsampled)
     # data_subTest = data.FillNan(data_subTest)
     
     pred = ModelApply(data_subTrainsampled,data_subTest,data_subTestLabel,'histGB',validation = True)
-    
+
     # compute top 100 sum of amount, divided by total fraud amount
     predTop100 = pred.sort_values(by=['PROB'],ascending=False)[0:100]
     predTop100 = predTop100.merge(data_subTestLabel,how='inner',left_on='ID', right_on='claim_id')
