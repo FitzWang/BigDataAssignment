@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from keras.preprocessing.image import ImageDataGenerator, load_img
 ### change to your own model
 ### other things to find out: 1.optimizers; 2.frozen layers num; 3.DataAugmentation; 4. NN building
-from keras.applications import NASNetLarge
+from keras.applications import NASNetMobile
 from keras import models
 from keras import layers
 from keras import optimizers
@@ -14,7 +14,7 @@ import io
 from PIL import Image
 import tensorflow as tf
 from keras import backend as K
-from sklearn.metrics import roc_auc_score,f1_score
+from sklearn.metrics import roc_auc_score,f1_score,precision_score,recall_score
 
 
 def get_weight(weights=0.07):
@@ -29,8 +29,7 @@ def get_weight(weights=0.07):
 
     return mycrossentropy
 
-def f1(y_true, y_pred):
-    def recall(y_true, y_pred):
+def recall(y_true, y_pred):
         """Recall metric.
 
         Only computes a batch-wise average of recall.
@@ -38,26 +37,30 @@ def f1(y_true, y_pred):
         Computes the recall, a metric for multi-label classification of
         how many relevant items are selected.
         """
+        y_true = tf.cast(y_true, tf.float32)
         true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
         possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-        recall = true_positives / (possible_positives + K.epsilon())
-        return recall
+        recall_ = true_positives / (possible_positives + K.epsilon())
+        return recall_
 
-    def precision(y_true, y_pred):
-        """Precision metric.
+def precision(y_true, y_pred):
+    """Precision metric.
 
-        Only computes a batch-wise average of precision.
+    Only computes a batch-wise average of precision.
 
-        Computes the precision, a metric for multi-label classification of
-        how many selected items are relevant.
-        """
-        true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-        predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-        precision = true_positives / (predicted_positives + K.epsilon())
-        return precision
-    precision = precision(y_true, y_pred)
-    recall = recall(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
+    Computes the precision, a metric for multi-label classification of
+    how many selected items are relevant.
+    """
+    y_true = tf.cast(y_true, tf.float32)
+    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
+    precision_ = true_positives / (predicted_positives + K.epsilon())
+    return precision_
+
+def f1(y_true, y_pred):
+    precision_ = precision(y_true, y_pred)
+    recall_ = recall(y_true, y_pred)
+    return 2*((precision_*recall_)/(precision_+recall_+K.epsilon()))
 
 
 def ModeChange(pretrained_model,cut_idx):
@@ -88,7 +91,7 @@ def TransferLearning(pretrained_model,cut_idx,DataMode,record_dict):
 
     model.compile(loss=get_weight(),
                 optimizer=chosen_optimizer,
-                metrics=[f1,tf.keras.metrics.AUC()])
+                metrics=[f1,tf.keras.metrics.AUC(),precision,recall])
 
     ### 3. DataAugmentation
     if DataMode == 'DataAugmentation':
@@ -179,10 +182,18 @@ def TransferLearning(pretrained_model,cut_idx,DataMode,record_dict):
     predictions = pred_bool.astype(int)
     train_f1 = history.history['f1']
     val_f1 = history.history['val_f1']
-    micro_test_f1 = round(f1_score(y_true=TestLabel,y_pred=predictions, average='micro'),4)
-    macro_test_f1 = round(f1_score(y_true=TestLabel,y_pred=predictions, average='macro'),4)
+
+    test_auc = round(roc_auc_score(y_true=TestLabel,y_score=pred),6)
+    record_dict[save_pref]['test_auc'] = test_auc
+    micro_test_f1 = round(f1_score(y_true=TestLabel,y_pred=predictions, average='micro'),6)
+    macro_test_f1 = round(f1_score(y_true=TestLabel,y_pred=predictions, average='macro'),6)
     record_dict[save_pref]['micro_test_f1'] = micro_test_f1
     record_dict[save_pref]['macro_test_f1'] = macro_test_f1
+    test_precision = np.float(round(precision(y_true=TestLabel,y_pred=pred).numpy(),6))
+    test_recall = np.float(round(recall(y_true=TestLabel,y_pred=pred).numpy(),6))
+    record_dict[save_pref]['test_precision'] = test_precision
+    record_dict[save_pref]['test_recall'] = test_recall
+
     try:
         train_auc = history.history['auc']
         val_auc = history.history['val_auc']
@@ -192,7 +203,7 @@ def TransferLearning(pretrained_model,cut_idx,DataMode,record_dict):
                 train_auc = history.history[key_]
             elif key_.startswith('val_auc'):
                 val_auc = history.history[key_]
-    test_auc = round(roc_auc_score(y_true=TestLabel,y_score=pred),4)
+    
 
     # history = model.fit_generator(
     #     test_generator,
@@ -307,12 +318,12 @@ if __name__ == '__main__':
     TestLabel = TestDf[test_feature].values.tolist()
     
     
-    ### the size of image
-    image_size = 331
+    ### the size of image, it could change for different model
+    image_size = 224
     ### batch_size, you could reduce if your machine could not afford (exceeds free system memory)
     batchsize_ = 100
     ### how many train epoches, must changed here!!!
-    train_epochs = 4
+    train_epochs = 100
 
     ### 1.optimization it is said that we should not use large learning rate for fine tune to avoid overfitting, so SGD is better.
     # optimizers.SGD(lr=1e-4)
@@ -323,11 +334,11 @@ if __name__ == '__main__':
     your model, must changed here! you could find here: https://keras.io/api/applications/
     Dont forget to import it above
     '''
-    pretrained_model = NASNetLarge(weights='imagenet', include_top=False, input_shape=(image_size, image_size, 3))
+    pretrained_model = NASNetMobile(weights='imagenet', include_top=False, input_shape=(image_size, image_size, 3))
     record_dict = {}
     ##  frozen all layers 
     record_dict = TransferLearning(pretrained_model,-1,'',record_dict)
-
+    print (record_dict)
     out_json_dict = json.dumps(record_dict,indent=4)
     f3 = open(out_json_path, 'w')
     f3.write(out_json_dict)
