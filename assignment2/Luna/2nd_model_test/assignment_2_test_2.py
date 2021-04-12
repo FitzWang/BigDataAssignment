@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from keras.preprocessing.image import ImageDataGenerator, load_img
 ### change to your own model
 ### other things to find out: 1.optimizers; 2.frozen layers num; 3.DataAugmentation; 4. NN building
-from keras.applications import NASNetMobile
+from keras.applications import NasNetLarge
 from keras import models
 from keras import layers
 from keras import optimizers
@@ -396,7 +396,7 @@ if __name__ == '__main__':
     '''
     your pictures folder dir path, must changed here!!! you could have a try in new folder with much less pictures
     '''
-    rootDir = 'E:/KUL/Stat/Data_Science/Big Data World/assignment_2/recipes'
+    rootDir = '/Users/lunachang/OneDrive - KU Leuven/Y1_S2/🔴 Advanced Analytics in Big Data World/Assignment/2_deep learning on images/recipes'
     df_path = 'recipes.csv'
     dataframe_ = pd.read_csv(df_path,sep = ';')
     ### the performance indicators will be saved as this name
@@ -449,7 +449,7 @@ if __name__ == '__main__':
     TestLabel = TestDf[test_feature].values.tolist()
     
     ### the size of image, it could change for different model
-    image_size = 224
+    image_size = 331
     ### batch_size, you could reduce if your machine could not afford (exceeds free system memory)
     batchsize_ = 100
     ### how many train epoches, must changed here!!!
@@ -467,7 +467,7 @@ if __name__ == '__main__':
     your model, must changed here! you could find here: https://keras.io/api/applications/
     Dont forget to import it above
     '''
-    pretrained_model = NASNetMobile(weights='imagenet', include_top=False, input_shape=(image_size, image_size, 3))
+    pretrained_model = NASNetLarge(weights='imagenet', include_top=False, input_shape=(image_size, image_size, 3))
     
     ##  frozen all layers 
     record_dict = TransferLearning(pretrained_model,-1,'',record_dict)
