@@ -1,4 +1,12 @@
 import os
+os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+
+os.environ["RUNFILES_DIR"] = "/Users/lunachang/opt/anaconda3/envs/big_data/share/plaidml"
+# plaidml might exist in different location. Look for "/usr/local/share/plaidml" and replace in above path
+
+os.environ["PLAIDML_NATIVE_PATH"] = "/Users/lunachang/opt/anaconda3/envs/big_data/lib/libplaidml.dylib"
+# libplaidml.dylib might exist in different location. Look for "/usr/local/lib/libplaidml.dylib" and replace in above path
+
 import json
 import numpy as np
 import pandas as pd
@@ -286,7 +294,7 @@ if __name__ == '__main__':
     your pictures folder dir path, must changed here!!! you could have a try in new folder with much less pictures
     '''
     rootDir = '/Users/lunachang/OneDrive - KU Leuven/Y1_S2/🔴 Advanced Analytics in Big Data World/Assignment/2_deep learning on images/recipes'
-    df_path = 'recipes.csv'
+    df_path = '/Users/lunachang/OneDrive - KU Leuven/Y1_S2/🔴 Advanced Analytics in Big Data World/Assignment/2_deep learning on images/recipes.csv'
     dataframe_ = pd.read_csv(df_path,sep = ';')
     ### the performance indicators will be saved as this name
     out_json_path = './record_dict.json'
