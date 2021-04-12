@@ -1,5 +1,6 @@
 import os
 import json
+import random
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ import io
 from PIL import Image
 import tensorflow as tf
 from keras import backend as K
-from sklearn.metrics import roc_auc_score,f1_score,precision_score,recall_score
+from sklearn.metrics import roc_auc_score,f1_score,precision_score,recall_score,accuracy_score
 
 
 def get_weight(weights=0.07):
@@ -84,14 +85,18 @@ def TransferLearning(pretrained_model,cut_idx,DataMode,record_dict):
     model.add(pretrained_model)
     model.add(layers.Flatten())
     ### how many neurons for he hidden layer before full-connected layer
-    model.add(layers.Dense(1024, activation='relu'))
+    model.add(layers.Dense(512, activation='relu'))
+    ### the ratio of dropout
+    model.add(layers.Dropout(0.5))
+    model.add(layers.Dense(128, activation='relu'))
     ### the ratio of dropout
     model.add(layers.Dropout(0.5))
     model.add(layers.Dense(len(test_feature), activation='sigmoid'))
-
-    model.compile(loss=get_weight(),
+    ## loss='binary_crossentropy',
+    ## loss=get_weight(),
+    model.compile(loss='binary_crossentropy',
                 optimizer=chosen_optimizer,
-                metrics=[f1,tf.keras.metrics.AUC(),precision,recall])
+                metrics=[f1,tf.keras.metrics.AUC(),precision,recall,'acc'])
 
     ### 3. DataAugmentation
     if DataMode == 'DataAugmentation':
@@ -173,7 +178,7 @@ def TransferLearning(pretrained_model,cut_idx,DataMode,record_dict):
     
 
     print (history.history)
-    save_pref = '_'.join([str(cut_idx),DataMode])
+    save_pref = '_'.join([optimizer,str(cut_idx),DataMode])
     model.save('{}.h5'.format(save_pref))
     record_dict[save_pref] = {}
     record_dict[save_pref] = history.history
@@ -182,7 +187,28 @@ def TransferLearning(pretrained_model,cut_idx,DataMode,record_dict):
     predictions = pred_bool.astype(int)
     train_f1 = history.history['f1']
     val_f1 = history.history['val_f1']
+    record_feature_indicators = {}
+    for idx in range(len(TestLabel[0])):
+        SubTestLabel = [i[idx] for i in TestLabel]
+        SubPredictions = [i[idx] for i in predictions]
+        SubPredProb = [i[idx] for i in pred]
+        sub_roc = roc_auc_score(y_true=SubTestLabel,y_score=SubPredProb)
+        sub_f1 = f1_score(y_true=SubTestLabel,y_pred=SubPredictions)
+        sub_precision = precision_score(y_true=SubTestLabel,y_pred=SubPredictions)
+        sub_recall = recall_score(y_true=SubTestLabel,y_pred=SubPredictions)
+        sub_acc = accuracy_score(y_true=SubTestLabel,y_pred=SubPredictions)
+        record_feature_indicators[test_feature[idx]] = {}
+        record_feature_indicators[test_feature[idx]]['sub_roc'] = sub_roc
+        record_feature_indicators[test_feature[idx]]['sub_acc'] = sub_acc
+        record_feature_indicators[test_feature[idx]]['sub_precision'] = sub_precision
+        record_feature_indicators[test_feature[idx]]['sub_recall'] = sub_recall
+        record_feature_indicators[test_feature[idx]]['sub_f1'] = sub_f1
+    # record_feature_indicators = sorted(record_feature_indicators.items(), key = lambda kv:(kv[1], kv[0]),reverse = True)
+    print (record_feature_indicators)    
+    record_dict[save_pref]['record_feature_indicators'] = record_feature_indicators    
 
+    test_acc = round(accuracy_score(y_true=TestLabel,y_pred=predictions),6)
+    record_dict[save_pref]['test_acc'] = test_acc
     test_auc = round(roc_auc_score(y_true=TestLabel,y_score=pred),6)
     record_dict[save_pref]['test_auc'] = test_auc
     micro_test_f1 = round(f1_score(y_true=TestLabel,y_pred=predictions, average='micro'),6)
@@ -263,6 +289,93 @@ def MergeLables(df,merge_threshold):
     else:
         return df
 
+# def PreprocessingSamples(dataframe_,dataframe_offset,dataframe_offset_2):
+#     dataframe_take = dataframe_.copy()
+#     test_feature = [i for i in dataframe_.columns.tolist() if i.startswith('tag_')]
+#     dataframe_2 = dataframe_[test_feature]
+#     count_ = 0
+#     for idx_ in range(dataframe_2.shape[0]):
+#         sample = [i for i in dataframe_2.iloc[idx_,:]]
+#         if sum(sample) == 0:
+#             count_ += 1
+#             # print (dataframe_.shape[0],dataframe_offset.shape[0],dataframe_offset_2.shape[0])
+#             # prob_ = random.random()
+#             # if prob_ <= 0.34:
+#             #     dataframe_offset = dataframe_offset.append(dataframe_take.iloc[idx_,:])
+#             #     dataframe_ = dataframe_.drop(idx_,0)
+#             # elif 0.34 < prob_ <= 0.67:
+#             #     dataframe_offset_2 = dataframe_offset_2.append(dataframe_take.iloc[idx_,:])
+#             dataframe_ = dataframe_.drop(idx_,0)
+
+#     print (count_)
+#     return dataframe_,dataframe_offset,dataframe_offset_2
+
+def PreprocessingSamples(dataframe_):
+    test_feature = [i for i in dataframe_.columns.tolist() if i.startswith('tag_')]
+    dataframe_2 = dataframe_[test_feature]
+    count_ = 0
+    for idx_ in range(dataframe_2.shape[0]):
+        sample = [i for i in dataframe_2.iloc[idx_,:]]
+        if sum(sample) == 0:
+            count_ += 1
+            # print (dataframe_.shape[0],dataframe_offset.shape[0],dataframe_offset_2.shape[0])
+            # prob_ = random.random()
+            # if prob_ <= 0.34:
+            #     dataframe_offset = dataframe_offset.append(dataframe_take.iloc[idx_,:])
+            #     dataframe_ = dataframe_.drop(idx_,0)
+            # elif 0.34 < prob_ <= 0.67:
+            #     dataframe_offset_2 = dataframe_offset_2.append(dataframe_take.iloc[idx_,:])
+            dataframe_ = dataframe_.drop(idx_,0)
+
+    print (count_)
+    return dataframe_
+
+def PreprocessingFeatures(dataframe_):
+    test_feature = [i for i in dataframe_.columns.tolist() if i.startswith('tag_')]
+    dataframe_2 = dataframe_[test_feature]
+
+    portion_list = []
+    portion_dict = {}
+    for idx_,feature_ in enumerate(test_feature):
+        original_feature_list = list(dataframe_[feature_])
+        portion = round(sum(original_feature_list) / len(original_feature_list),4)
+        portion_dict[feature_] = portion
+        portion_list.append(portion)
+
+        if portion < 0.01:
+            print (feature_,' dropping...')
+            dataframe_ = dataframe_.drop(feature_,1)
+
+    portion_dict = sorted(portion_dict.items(), key = lambda kv:(kv[1], kv[0]),reverse = True)
+    print (portion_dict)
+
+    return dataframe_
+
+def MergeLablesMannual(dataframe_):
+    merge_dict = {'tag_ketodiet':['tag_keto', 'tag_ketodiet','tag_lowcarb','tag_diet', 'tag_weightloss','tag_fitness'],
+    'tag_breakfasts':['tag_breakfastideas','tag_breakfast','tag_oats', 'tag_oatmeal'],
+    'tag_italianstyle':['tag_italian', 'tag_italy', 'tag_italia','tag_italianfood','tag_pasta', 'tag_pastalover'],
+    'tag_vegetable':['tag_veggie','tag_vegetarianrecipes', 'tag_vegetables', 'tag_veggies','tag_vegan', 'tag_veganfood','tag_plantbased','tag_vegetarian','tag_veganrecipe'],
+    'tag_meals':['tag_brunch','tag_dinner', 'tag_lunch'],
+    'tag_desserts':['tag_chocolat','tag_icecream','tag_cookies','tag_cakes','tag_sweettooth','tag_baker','tag_dessert', 'tag_desserts','tag_sweet', 'tag_sweets','tag_baking', 'tag_cake','tag_chocolate','tag_pastry','tag_bake', 'tag_bakery','tag_pancakes','tag_cheesecake','tag_bread'],
+    'tag_fish':['tag_fish', 'tag_salmon','tag_seafood'],
+    'tag_meategg':['tag_bbq','tag_protein','tag_eggs', 'tag_egg','tag_chicken', 'tag_steak','tag_meat', 'tag_beef'],
+    'tag_organic': ['tag_organic', 'tag_natural'],
+    'tag_fruit': ['tag_lemon','tag_fruit','tag_banana','tag_strawberry', 'tag_avocado'],
+    'tag_asianstyle': ['tag_noodles','tag_rice','tag_curry', 'tag_indianfood','tag_asianfood'],
+    'tag_snacks': ['tag_snack', 'tag_snacks'],
+    'tag_webs':['tag_foodbloggers','tag_food52','tag_easyrecipes','tag_ilovefood'],
+    'tag_drink':['tag_drinks','tag_coffee', 'tag_smoothie']}
+
+    for key_ in merge_dict.keys():
+        sub_dataframe_ = dataframe_[merge_dict[key_]]
+        new_list = []
+        for index_ in range(sub_dataframe_.shape[0]):
+            new_list.append(max(sub_dataframe_.iloc[index_,:]))
+        dataframe_[key_] = new_list
+        dataframe_ = dataframe_.drop(merge_dict[key_],1)
+    return dataframe_
+
 def ClearNonValidPhotos(df_):
     photos = list(df_["photo_id"])
     for photo in photos:
@@ -275,7 +388,6 @@ def ClearNonValidPhotos(df_):
         except:
             # print (photo)
             df_ = df_[~df_['photo_id'].isin([photo])] 
-
     return df_
 
 
@@ -290,13 +402,30 @@ if __name__ == '__main__':
     ### the performance indicators will be saved as this name
     out_json_path = './record_dict.json'
 
+    if os.path.exists(out_json_path):
+        with open(out_json_path,"r") as load_f:
+            record_dict = json.load(load_f)
+            print("loading...")
+    else:
+        record_dict = {}
+        print ('creating...')
+
     dataframe_ = dataframe_.dropna(axis=0,how='any').reset_index(drop=True)
+
+    dataframe_ = PreprocessingSamples(dataframe_)
+
+    dataframe_ = MergeLablesMannual(dataframe_)
+
 
     ### the auto merging method
     # merge_threshold = 0.3
     # dataframe_ = MergeLables(dataframe_,merge_threshold)
 
+    dataframe_ = PreprocessingFeatures(dataframe_)
+    print (dataframe_.shape[0],dataframe_.shape[1])
+
     test_feature = [i for i in dataframe_.columns.tolist() if i.startswith('tag_')]
+
     extract_feature = ['photo_id'] + test_feature[:]
     sub_dataframe_ = dataframe_[extract_feature]
     # sub_dataframe_[test_feature] = sub_dataframe_[test_feature].astype(str)  
@@ -306,36 +435,40 @@ if __name__ == '__main__':
 
     ### Clear those data of pictures could not be found or loaded
     sub_dataframe_ = ClearNonValidPhotos(sub_dataframe_)
+    print (sub_dataframe_.shape[0],sub_dataframe_.shape[1])
 
     ###y our portion of val and test portion, must changed!!!
-    test_portion = 0.3
+    test_portion = 0.2
     validation_portion = 0.3
     TestDf = sub_dataframe_.sample(frac=test_portion)
     TrainDf = sub_dataframe_.drop(list(TestDf.index))
     ValDf = TrainDf.sample(frac=validation_portion)
     TrainDf = TrainDf.drop(list(ValDf.index))
+    # TrainDf,ValDf,TestDf = PreprocessingSamples(TrainDf.reset_index(drop=True),ValDf.reset_index(drop=True),TestDf.reset_index(drop=True))
     
     TestLabel = TestDf[test_feature].values.tolist()
-    
     
     ### the size of image, it could change for different model
     image_size = 224
     ### batch_size, you could reduce if your machine could not afford (exceeds free system memory)
     batchsize_ = 100
     ### how many train epoches, must changed here!!!
-    train_epochs = 100
-
+    train_epochs = 10
+    optimizer = 'Adam'
     ### 1.optimization it is said that we should not use large learning rate for fine tune to avoid overfitting, so SGD is better.
     # optimizers.SGD(lr=1e-4)
     ## Adam  RMSprop
-    chosen_optimizer = optimizers.SGD(lr=1e-4)
+    if optimizer == 'SGD':
+        chosen_optimizer = optimizers.SGD(lr=1e-4)
+    elif optimizer == 'Adam':
+        chosen_optimizer = optimizers.Adam(lr=1e-4)
     ### 0.model
     '''
     your model, must changed here! you could find here: https://keras.io/api/applications/
     Dont forget to import it above
     '''
     pretrained_model = NASNetMobile(weights='imagenet', include_top=False, input_shape=(image_size, image_size, 3))
-    record_dict = {}
+    
     ##  frozen all layers 
     record_dict = TransferLearning(pretrained_model,-1,'',record_dict)
     print (record_dict)
@@ -354,7 +487,7 @@ if __name__ == '__main__':
     '''
     ###  but be carful about overfitting!
     ## 
-    record_dict = TransferLearning(pretrained_model,-4,'',record_dict)
+    record_dict = TransferLearning(pretrained_model,-2,'',record_dict)
 
     out_json_dict = json.dumps(record_dict,indent=4)
     f3 = open(out_json_path, 'w')
@@ -362,7 +495,7 @@ if __name__ == '__main__':
     f3.close()
 
     ## 3. with DataAugmentation
-    record_dict = TransferLearning(pretrained_model,-1,'DataAugmentation',record_dict)
+    record_dict = TransferLearning(pretrained_model,-3,'',record_dict)
 
     out_json_dict = json.dumps(record_dict,indent=4)
     f3 = open(out_json_path, 'w')
