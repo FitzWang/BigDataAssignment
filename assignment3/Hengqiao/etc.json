@@ -1,0 +1,9 @@
+{
+    "rejected_words":["one","two","film","TRUE","get","take","make","come","go","via",
+        "http","https","isnt","im","tco","dont","amp","ive","thats","didnt","havent"],
+    "not_related_words": [],
+    "validation_portion":0.3,
+    "min_df":5,
+    "max_df":0.9,
+    "ngram_range":[1,3]
+}
