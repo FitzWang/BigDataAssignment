@@ -1,0 +1,30 @@
+match (n1:VIDEO{is_known_misleading:true}) -[:RECOMMENDS]-> (n2:VIDEO) 
+where date(n1.upload_date)>=date("2019-01-01")  and date(n2.upload_date)>=date("2019-01-01")  
+return n1,n2 limit 50
+
+CALL gds.graph.create(
+  'VideoGraph',
+  'VIDEO',
+  'RECOMMENDS'
+)
+
+match (misleading:VIDEO{is_known_misleading:true})
+CALL gds.pageRank.stream('VideoGraph',{
+
+  sourceNodes: [misleading]
+})
+YIELD nodeId, score
+where  date(gds.util.asNode(nodeId).upload_date) >=date("2019-01-01") and gds.util.asNode(nodeId).is_known_misleading = flase
+RETURN gds.util.asNode(nodeId).title AS title, gds.util.asNode(nodeId).is_known_misleading AS misleading,score
+ORDER BY score DESC, title ASC
+
+CALL gds.pageRank.stream('VideoGraph')
+YIELD nodeId, score
+where  date(gds.util.asNode(nodeId).upload_date) >=date("2019-01-01") and gds.util.asNode(nodeId).is_known_misleading = true
+RETURN gds.util.asNode(nodeId).title AS title, gds.util.asNode(nodeId).is_known_misleading AS misleading,score
+ORDER BY score DESC, title ASC
+
+
+match (n1:QUERY{is_misleading:true}) -[:RESULTS]-> (n2:VIDEO) 
+where date(n2.upload_date)>=date("2019-01-01")  and n2.is_known_misleading = true
+return n1,n2 limit 100
