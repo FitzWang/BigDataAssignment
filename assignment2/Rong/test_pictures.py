@@ -76,7 +76,7 @@ with open(out_json_path,"r") as load_f:
     record_dict = json.load(load_f)
 features_list = list(record_dict[model_name]['record_feature_indicators'].keys())
 for fn in os.listdir(predict_dir):
-    if fn.endswith('jpg'):
+    if fn.endswith('png'):
         images = []
         fd = os.path.join(predict_dir, fn)
         images.append(fd)

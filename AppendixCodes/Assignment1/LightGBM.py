@@ -31,7 +31,6 @@ from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
 from sklearn import decomposition
 
-
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
     def __init__(self, patience=7, verbose=False, delta=0):
@@ -651,7 +650,7 @@ def NeuralNetworks(model_name,sub_train_data,total_train_data,test_data,label_te
         valid_loss = val_criterion(torch.nn.functional.softmax(net(net_val_data),dim=1), torch.LongTensor(list(label_val)))	
 
         early_stopping(valid_loss, net)
-        if early_stopping.early_stop:
+        if early_stopping.early_stop and epoch>50:
             print("Early stopping on epoch ",epoch+1)
             break
     
@@ -746,7 +745,7 @@ def LightGBM(model_name,sub_train_data,total_train_data,test_data,val_data,sub_l
     # print ('Start training...'+str(i))  
     
     rds_params = {
-        'bagging_freq': range(100, 600, 100),
+        'bagging_freq': range(100, 500, 100),
         'min_child_weight': range(3, 20, 2),
         'colsample_bytree': np.arange(0.4, 1.0),
         'max_depth': range(4, 32, 2),
@@ -986,21 +985,21 @@ def TrainProcess(df_train, label_train,test_data,label_test,W_test,model_names,o
         sub_train_data,sub_label_train,sub_W_train = GetDataandLabel(sub_train_data)
         print (len(sub_label_train),train_data_pos.shape[0],sub_train_data_neg.shape[0])
 
-        for model_name in model_names:
-            if model_name == 'lightGBM':
-                record_dict = LightGBM(model_name,sub_train_data,total_train_data,test_data,val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
-            
-            if model_name == 'NeuralNetworks':
-                record_dict = NeuralNetworks(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
+        
+        model_name = 'lightGBM'
+        record_dict = LightGBM(model_name,sub_train_data,total_train_data,test_data,val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
+        
+        model_name = 'NeuralNetworks'
+        record_dict = NeuralNetworks(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
 
-            if model_name == 'FANS':
-                record_dict = FANS_Application(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
+        model_name = 'FANS'
+        record_dict = FANS_Application(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
 
-            if model_name == 'IsolationForest':
-                record_dict = OutlierDetection(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
+        model_name = 'IsolationForest'
+        record_dict = OutlierDetection(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
 
-            if model_name == 'OneClassSVM':
-                record_dict = OutlierDetection(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
+        model_name = 'OneClassSVM'
+        record_dict = OutlierDetection(model_name,sub_train_data,total_train_data,test_data,list(label_test),val_data,sub_label_train,total_label_train,label_val,output_pattern,sub_W_train,W_val,record_dict,del_cols)
 
     print ('*'*10)
     print ('*'*10)
@@ -1038,7 +1037,7 @@ if __name__ == '__main__':
     # out_train_path_1 = './encoded_train_with_val.csv'
     # out_train_path_2 = './encoded_test.csv'
     model_names = ['lightGBM','NeuralNetworks','FANS','OneClassSVM','IsolationForest']
-    model_names = ['lightGBM','NeuralNetworks']
+    # model_names = ['OneClassSVM','IsolationForest']
     ### to see how many epoches for trial on train dataset
     train_epoches = 15
     ### unimportant_features, directly deleted
@@ -1054,9 +1053,9 @@ if __name__ == '__main__':
     ## hum many times for sampling negative data concerning positive data
     portion_neg = 1
     ## number of K folds
-    k_num = 2
+    k_num = 10
     ## number of K folds for RandomizedSearch
-    cv_search = 2
+    cv_search = 10
 
     df = pd.read_csv(input_train_path,sep = ';',index_col='claim_id')
     # 45622 is deleted due to data quality of claim_vehicle_load (500)
