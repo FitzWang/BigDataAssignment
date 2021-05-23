@@ -1,0 +1,8 @@
+1. vehicle ID and claimed vehicle ID difference
+2. driver ID and policy holder ID difference
+3.driver postal code and policy holder postal code difference
+4. year birth to 2017
+5. expert id : nan or not
+6. driver vehicle id and claim vehicle ID difference
+7. if policy data renewed
+8.alcohole

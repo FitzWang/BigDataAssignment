@@ -1,0 +1,24 @@
+{
+    "lightGBM": {
+        "train_auc": [
+            0.9229632530685038
+        ],
+        "total_train_score": [
+            872116.4600000002
+        ],
+        "total_train_ratio": [
+            0.8194
+        ]
+    },
+    "NeuralNetworks": {
+        "train_auc": [
+            0.8514126796798951
+        ],
+        "total_train_score": [
+            629258.9399999998
+        ],
+        "total_train_ratio": [
+            0.7021
+        ]
+    }
+}
